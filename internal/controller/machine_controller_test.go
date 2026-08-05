@@ -27,6 +27,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	machineprovider "github.com/yevhenii-poliakov/machine-operator/internal/provider"
+
 	infrastructurev1alpha1 "github.com/yevhenii-poliakov/machine-operator/api/v1alpha1"
 )
 
@@ -75,17 +77,63 @@ var _ = Describe("Machine Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+
+			memoryProvider := machineprovider.NewMemoryProvider()
+
 			controllerReconciler := &MachineReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Provider: memoryProvider,
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			result, err := controllerReconciler.Reconcile(
+				ctx,
+				reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				},
+			)
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Expected RequeueAfter to be greater than 0")
+			reconciledMachine := &infrastructurev1alpha1.Machine{}
+
+			Expect(
+				k8sClient.Get(
+					ctx,
+					typeNamespacedName,
+					reconciledMachine,
+				),
+			).To(Succeed())
+
+			Expect(reconciledMachine.Status.ProviderID).To(
+				Equal("machine-00001"),
+			)
+			Expect(reconciledMachine.Status.State).To(
+				Equal("Running"),
+			)
+
+			firstProviderID := reconciledMachine.Status.ProviderID
+
+			By("Reconciling the same Machine again")
+
+			_, err = controllerReconciler.Reconcile(
+				ctx,
+				reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(
+				k8sClient.Get(
+					ctx,
+					typeNamespacedName,
+					reconciledMachine,
+				),
+			).To(Succeed())
+
+			Expect(reconciledMachine.Status.ProviderID).To(
+				Equal(firstProviderID),
+			)
 		})
 	})
 })

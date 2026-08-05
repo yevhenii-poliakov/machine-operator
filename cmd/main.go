@@ -37,6 +37,7 @@ import (
 
 	infrastructurev1alpha1 "github.com/yevhenii-poliakov/machine-operator/api/v1alpha1"
 	"github.com/yevhenii-poliakov/machine-operator/internal/controller"
+	machineprovider "github.com/yevhenii-poliakov/machine-operator/internal/provider"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -178,9 +179,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	machineProvider := machineprovider.NewMemoryProvider()
+
 	if err := (&controller.MachineReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Provider: machineProvider,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "machine")
 		os.Exit(1)
