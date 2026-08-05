@@ -54,7 +54,11 @@ var _ = Describe("Machine Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: infrastructurev1alpha1.MachineSpec{
+						Image:  "ubuntu-24.04",
+						Flavor: "medium",
+						Region: "vienna",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

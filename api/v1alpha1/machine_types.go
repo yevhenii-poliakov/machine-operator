@@ -26,37 +26,31 @@ import (
 
 // MachineSpec defines the desired state of Machine
 type MachineSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// Image specifies the operating system image used for the machine.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
 
-	// foo is an example field of Machine. Edit machine_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// Flavor specifies the compute size of the machine.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Flavor string `json:"flavor"`
+
+	// Region specifies where the machine should be provisioned.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	Region string `json:"region"`
 }
 
 // MachineStatus defines the observed state of Machine.
 type MachineStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the Machine resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
+	// ProviderID is the unique identifier assigned by the infrastructure provider.
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	ProviderID string `json:"providerID,omitempty"`
+
+	// State represents the current state reported by the infrastructure provider.
+	// +optional
+	State string `json:"state,omitempty"`
 }
 
 // +kubebuilder:object:root=true
