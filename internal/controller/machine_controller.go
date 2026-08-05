@@ -20,11 +20,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"time"
 
 	infrastructurev1alpha1 "github.com/yevhenii-poliakov/machine-operator/api/v1alpha1"
 	machineprovider "github.com/yevhenii-poliakov/machine-operator/internal/provider"
