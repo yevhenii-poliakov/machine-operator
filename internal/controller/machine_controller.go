@@ -29,9 +29,13 @@ import (
 	infrastructurev1alpha1 "github.com/yevhenii-poliakov/machine-operator/api/v1alpha1"
 	machineprovider "github.com/yevhenii-poliakov/machine-operator/internal/provider"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const providerPollInterval = 30 * time.Second
+const (
+	machineFinalizer     = "infrastructure.example.com/machine-finalizer"
+	providerPollInterval = 30 * time.Second
+)
 
 // MachineReconciler reconciles a Machine object
 type MachineReconciler struct {
@@ -75,6 +79,67 @@ func (r *MachineReconciler) Reconcile(
 			req.Name,
 			err,
 		)
+	}
+
+	if !machine.DeletionTimestamp.IsZero() {
+		if !controllerutil.ContainsFinalizer(&machine, machineFinalizer) {
+			return ctrl.Result{}, nil
+		}
+
+		if machine.Status.ProviderID != "" {
+			if r.Provider == nil {
+				return ctrl.Result{}, errors.New(
+					"machine provider is not configured",
+				)
+			}
+
+			if err := r.Provider.DeleteMachine(
+				ctx,
+				machine.Status.ProviderID,
+			); err != nil {
+				return ctrl.Result{}, fmt.Errorf(
+					"delete provider machine %q: %w",
+					machine.Status.ProviderID,
+					err,
+				)
+			}
+
+			logger.Info(
+				"Deleted machine from infrastructure provider",
+				"providerID",
+				machine.Status.ProviderID,
+			)
+		}
+
+		controllerutil.RemoveFinalizer(&machine, machineFinalizer)
+
+		if err := r.Update(ctx, &machine); err != nil {
+			return ctrl.Result{}, fmt.Errorf(
+				"remove finalizer from Machine %s/%s: %w",
+				req.Namespace,
+				req.Name,
+				err,
+			)
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(&machine, machineFinalizer) {
+		controllerutil.AddFinalizer(&machine, machineFinalizer)
+
+		if err := r.Update(ctx, &machine); err != nil {
+			return ctrl.Result{}, fmt.Errorf(
+				"add finalizer to Machine %s/%s: %w",
+				req.Namespace,
+				req.Name,
+				err,
+			)
+		}
+
+		logger.Info("Added finalizer to Machine")
+
+		return ctrl.Result{}, nil
 	}
 
 	if r.Provider == nil {

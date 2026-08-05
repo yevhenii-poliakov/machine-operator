@@ -18,12 +18,14 @@ package controller
 
 import (
 	"context"
-
+	stderrors "errors"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -47,10 +49,15 @@ var _ = Describe("Machine Controller", func() {
 		}
 		machine := &infrastructurev1alpha1.Machine{}
 
+		var (
+			memoryProvider       *machineprovider.MemoryProvider
+			controllerReconciler *MachineReconciler
+		)
+
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind Machine")
 			err := k8sClient.Get(ctx, typeNamespacedName, machine)
-			if err != nil && errors.IsNotFound(err) {
+			if err != nil && apierrors.IsNotFound(err) {
 				resource := &infrastructurev1alpha1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
@@ -64,27 +71,64 @@ var _ = Describe("Machine Controller", func() {
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
+
+			memoryProvider = machineprovider.NewMemoryProvider()
+			controllerReconciler = &MachineReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Provider: memoryProvider,
+			}
+
+			By("Adding the finalizer")
+
+			_, err = controllerReconciler.Reconcile(
+				ctx,
+				reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			machineWithFinalizer := &infrastructurev1alpha1.Machine{}
+
+			Expect(
+				k8sClient.Get(
+					ctx,
+					typeNamespacedName,
+					machineWithFinalizer,
+				),
+			).To(Succeed())
+
+			Expect(
+				controllerutil.ContainsFinalizer(
+					machineWithFinalizer,
+					machineFinalizer,
+				),
+			).To(BeTrue())
 		})
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &infrastructurev1alpha1.Machine{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			if apierrors.IsNotFound(err) {
+				return
+			}
+
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Machine")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			if controllerutil.ContainsFinalizer(resource, machineFinalizer) {
+				controllerutil.RemoveFinalizer(resource, machineFinalizer)
+				Expect(k8sClient.Update(ctx, resource)).To(Succeed())
+			}
+
+			err = k8sClient.Delete(ctx, resource)
+			if err != nil {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-
-			memoryProvider := machineprovider.NewMemoryProvider()
-
-			controllerReconciler := &MachineReconciler{
-				Client:   k8sClient,
-				Scheme:   k8sClient.Scheme(),
-				Provider: memoryProvider,
-			}
 
 			result, err := controllerReconciler.Reconcile(
 				ctx,
@@ -134,6 +178,39 @@ var _ = Describe("Machine Controller", func() {
 			Expect(reconciledMachine.Status.ProviderID).To(
 				Equal(firstProviderID),
 			)
+
+			By("Deleting the Machine resource")
+
+			Expect(
+				k8sClient.Delete(ctx, reconciledMachine),
+			).To(Succeed())
+
+			By("Reconciling the deleting Machine")
+
+			_, err = controllerReconciler.Reconcile(
+				ctx,
+				reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				},
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = memoryProvider.GetMachine(ctx, firstProviderID)
+			Expect(
+				stderrors.Is(err, machineprovider.ErrMachineNotFound),
+			).To(BeTrue())
+
+			Eventually(func() bool {
+				deletedMachine := &infrastructurev1alpha1.Machine{}
+
+				err := k8sClient.Get(
+					ctx,
+					typeNamespacedName,
+					deletedMachine,
+				)
+
+				return apierrors.IsNotFound(err)
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
 		})
 	})
 })
